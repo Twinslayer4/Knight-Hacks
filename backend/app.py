@@ -2,6 +2,7 @@ import os
 
 from databricks import sql
 from flask import Flask, jsonify, render_template, request
+from getDeals import ingest_flipp_pipeline
 
 app = Flask(__name__, template_folder='../templates')
 
@@ -56,6 +57,7 @@ def get_deals():
         return jsonify({"error": "Enter a five-digit ZIP code."}), 400
 
     try:
+        ingest_flipp_pipeline(zip_code)
         deals = find_deals(zip_code)
     except Exception:
         app.logger.exception("Failed to load deals from Databricks")

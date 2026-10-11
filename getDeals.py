@@ -30,7 +30,7 @@ def sanitize_items(items):
         sanitized.append(new_item)
     return sanitized
 
-def ingest_flipp_pipeline():
+def ingest_flipp_pipeline(user_postal_code):
     api_url = "https://api.parse.bot/scraper/054ce88f-2a08-4272-9ab9-70799328cedf/search_deals"
     
     # Securely retrieve the API key from environment variables
@@ -41,11 +41,11 @@ def ingest_flipp_pipeline():
     headers = {"X-API-Key": api_key}
     
     # Hardcoded postal code (will be replaced by frontend input later)
-    target_postal_code = "32816"
+    
     
     params = {
         "query": "Buy one",
-        "postal_code": target_postal_code
+        "postal_code": user_postal_code
     }
     
     print(f">>> Contacting Parse.bot API for postal code: {target_postal_code} (waiting up to 60s for scraper)...")
