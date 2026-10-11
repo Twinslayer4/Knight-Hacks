@@ -1,4 +1,9 @@
 command: ["python", "backend/app.py"]
+
+resources:
+  - name: secret
+    type: secret
+
 env:
   - name: PARSE_BOT_API_KEY
     valueFrom: secret
