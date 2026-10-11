@@ -1,56 +1,21 @@
 import os
 import requests
-import json
-import pyspark.sql
-from pyspark.sql import SparkSession
-
-# Initialize active Databricks Spark Engine
-spark = SparkSession.builder.getOrCreate()
-
-def sanitize_items(items):
-    """Normalize numeric types across items to prevent LongType vs DoubleType Spark inference conflicts."""
-    if not items:
-        return items
-    
-    # Check which keys contain floats, so we can harmonize ints to floats for those keys
-    float_keys = set()
-    for item in items:
-        for k, v in item.items():
-            if isinstance(v, float):
-                float_keys.add(k)
-                
-    sanitized = []
-    for item in items:
-        new_item = {}
-        for k, v in item.items():
-            if k in float_keys and isinstance(v, int):
-                new_item[k] = float(v)
-            else:
-                new_item[k] = v
-        sanitized.append(new_item)
-    return sanitized
+from databricks import sql
 
 def ingest_flipp_pipeline(user_postal_code):
     api_url = "https://api.parse.bot/scraper/054ce88f-2a08-4272-9ab9-70799328cedf/search_deals"
     
-    # Securely retrieve the API key from environment variables
     api_key = os.getenv("PARSE_BOT_API_KEY")
     if not api_key:
         raise ValueError(">>> Error: PARSE_BOT_API_KEY environment variable is not set.")
 
     headers = {"X-API-Key": api_key}
-    
-    # Hardcoded postal code (will be replaced by frontend input later)
-    
-    
     params = {
         "query": "Buy one",
         "postal_code": user_postal_code
     }
     
-    print(f">>> Contacting Parse.bot API for postal code: {target_postal_code} (waiting up to 60s for scraper)...")
-    
-    # Expanded timeout to 60 seconds to accommodate external scraper response times
+    print(f">>> Contacting Parse.bot API for postal code: {user_postal_code}...")
     response = requests.get(api_url, headers=headers, params=params, timeout=60)
     
     if response.status_code == 200:
@@ -64,74 +29,56 @@ def ingest_flipp_pipeline(user_postal_code):
         print(">>> Warning: No items returned from API.")
         return
 
-    # Sanitize items to resolve integer/float type mismatches before Spark inference
-    clean_items = sanitize_items(items)
+    # Connect to Databricks using the SQL connector instead of Spark
+    with sql.connect(
+        server_hostname="dbc-27a699b2-bbb7.cloud.databricks.com",
+        http_path="/sql/1.0/warehouses/5bc8676af1d56063",
+        access_token=os.environ["DATABRICKS_TOKEN"]
+    ) as connection:
+        with connection.cursor() as cursor:
+            for item in items:
+                merchant_id = item.get("merchant_id")
+                merchant_name = item.get("merchant_name")
+                item_id = item.get("id")
+                item_name = item.get("name")
+                category = item.get("category_l1")
+                sale_story = str(item.get("sale_story", "") or "")
+                pre_price_text = str(item.get("pre_price_text", "") or "")
+                price = item.get("price")
 
-    # Create Spark DataFrame directly from the sanitized items list in-memory
-    df = spark.createDataFrame(clean_items)
-    row_count = df.count()
-    print(f">>> Successfully created Spark DataFrame with {row_count} rows.")
+                if not merchant_id or not item_id:
+                    continue
 
-    if row_count > 0:
-        # Register as temporary view
-        df.createOrReplaceTempView("raw_flipp_data")
-        
-        # 1. Upsert parent table: Stores
-        spark.sql("""
-            MERGE INTO default.stores AS target
-            USING (
-                SELECT DISTINCT merchant_id AS store_id, merchant_name AS store_name 
-                FROM raw_flipp_data 
-                WHERE merchant_id IS NOT NULL AND merchant_name IS NOT NULL
-            ) AS source
-            ON target.store_id = source.store_id
-            WHEN NOT MATCHED THEN INSERT (store_id, store_name) 
-            VALUES (source.store_id, source.store_name)
-        """)
-        print(">>> Stores table updated.")
+                # Determine BOGO promotion status using python string checks
+                text_to_check = (sale_story + " " + pre_price_text).lower()
+                bogo_promotion = "buy" in text_to_check and "get" in text_to_check and "free" in text_to_check
 
-        # 2. Upsert parent table: Items
-        spark.sql("""
-            MERGE INTO default.items AS target
-            USING (
-                SELECT DISTINCT id AS item_id, name AS item_name, category_l1 AS category 
-                FROM raw_flipp_data 
-                WHERE id IS NOT NULL AND name IS NOT NULL
-            ) AS source
-            ON target.item_id = source.item_id
-            WHEN NOT MATCHED THEN INSERT (item_id, item_name, category) 
-            VALUES (source.item_id, source.item_name, source.category)
-        """)
-        print(">>> Items table updated.")
+                # 1. Upsert Store
+                cursor.execute("""
+                    MERGE INTO workspace.default.stores AS target
+                    USING (SELECT ? AS store_id, ? AS store_name) AS source
+                    ON target.store_id = source.store_id
+                    WHEN NOT MATCHED THEN INSERT (store_id, store_name) VALUES (source.store_id, source.store_name)
+                """, [merchant_id, merchant_name])
 
-        # 3. Upsert associative table: Store-Product with strict sequential BOGO regex check
-        spark.sql("""
-            MERGE INTO default.store_product AS target
-            USING (
-                SELECT 
-                    merchant_id AS store_id, 
-                    id AS item_id, 
-                    CASE 
-                        WHEN lower(coalesce(sale_story, '')) RLIKE 'buy.*get.*free'
-                             OR lower(coalesce(pre_price_text, '')) RLIKE 'buy.*get.*free'
-                        THEN true 
-                        ELSE false 
-                    END AS bogo_promotion
-                FROM raw_flipp_data
-                WHERE merchant_id IS NOT NULL AND id IS NOT NULL
-            ) AS source
-            ON target.store_id = source.store_id AND target.item_id = source.item_id
-            WHEN MATCHED THEN UPDATE SET 
-                target.bogo_promotion = source.bogo_promotion
-            WHEN NOT MATCHED THEN INSERT (store_id, item_id, bogo_promotion) 
-                VALUES (source.store_id, source.item_id, source.bogo_promotion)
-        """)
-        print(">>> Store-Product associative table updated successfully!")
-        
-        # Show final result state
-        spark.table("default.store_product").show()
-    else:
-        print(">>> Warning: DataFrame was empty. Skipping database merges.")
+                # 2. Upsert Item
+                cursor.execute("""
+                    MERGE INTO workspace.default.items AS target
+                    USING (SELECT ? AS item_id, ? AS item_name, ? AS category) AS source
+                    ON target.item_id = source.item_id
+                    WHEN NOT MATCHED THEN INSERT (item_id, item_name, category) VALUES (source.item_id, source.item_name, source.category)
+                """, [item_id, item_name, category])
+
+                # 3. Upsert Store-Product relation
+                cursor.execute("""
+                    MERGE INTO workspace.default.store_product AS target
+                    USING (SELECT ? AS store_id, ? AS item_id, ? AS price, ? AS bogo_promotion) AS source
+                    ON target.store_id = source.store_id AND target.item_id = source.item_id
+                    WHEN MATCHED THEN UPDATE SET target.bogo_promotion = source.bogo_promotion, target.price = source.price
+                    WHEN NOT MATCHED THEN INSERT (store_id, item_id, price, bogo_promotion) VALUES (source.store_id, source.item_id, source.price, source.bogo_promotion)
+                """, [merchant_id, item_id, price, bogo_promotion])
+
+    print(">>> Unity Catalog tables updated successfully via SQL Connector!")
 
 if __name__ == "__main__":
-    ingest_flipp_pipeline()
+    ingest_flipp_pipeline("32816")
