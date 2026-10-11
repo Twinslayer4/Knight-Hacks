@@ -1,5 +1,6 @@
 import requests
 import re
+import os
 import pyspark.sql
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType, BooleanType
@@ -7,13 +8,16 @@ from pyspark.sql.types import StructType, StructField, StringType, IntegerType, 
 # Initialize active Databricks Spark Engine
 spark = SparkSession.builder.getOrCreate()
 
+#Get enviroment key
+api_key = os.environ.get("FLIPP_API_KEY")
+
 def fetch_raw_flipp_zip_payload():
     """
     Connects to the Parse.bot API using live parameters.
     Falls back gracefully to mock data if a 502/Gateway error occurs.
     """
     api_url = "https://api.parse.bot/scraper/054ce88f-2a08-4272-9ab9-70799328cedf/search_deals"
-    headers = {"X-API-Key": "pmx_8e4f888f582c52ec6f8b69bd7a488af0"}
+    headers = {"X-API-Key": api_key}
     params = {
         "query": "Buy one",
         "postal_code": "32816"
@@ -33,8 +37,8 @@ def fetch_raw_flipp_zip_payload():
             print(f"API Warning: Received Status Code {response.status_code}. Activating mock fallback.")
     except Exception as e:
         print(f"API Connection Error: {e}. Activating mock fallback.")
+
     
-    # --- GRACEFUL HACKATHON FALLBACK DATA ---
     # Field names have been updated here to match the exact keys returned by Parse.bot!
     return [
         {"merchant_name": "Walmart Neighborhood Market", "name": "Sparkling Water 12-Pack", "category_l2": "Beverages", "pre_price_text": "Buy 1 Get 1 Free", "current_price": 12.80},
