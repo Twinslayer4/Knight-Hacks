@@ -1,5 +1,0 @@
-command: ["python", "backend/app.py"]
-
-env:
-  - name: PARSE_BOT_API_KEY
-    valueFrom: PARSE_BOT_API_KEY
