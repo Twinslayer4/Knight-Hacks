@@ -1,125 +1,137 @@
-import requests
-import re
 import os
+import requests
+import json
 import pyspark.sql
 from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType, BooleanType
 
 # Initialize active Databricks Spark Engine
 spark = SparkSession.builder.getOrCreate()
 
-#Get enviroment key
-api_key = os.environ.get("FLIPP_API_KEY")
+def sanitize_items(items):
+    """Normalize numeric types across items to prevent LongType vs DoubleType Spark inference conflicts."""
+    if not items:
+        return items
+    
+    # Check which keys contain floats, so we can harmonize ints to floats for those keys
+    float_keys = set()
+    for item in items:
+        for k, v in item.items():
+            if isinstance(v, float):
+                float_keys.add(k)
+                
+    sanitized = []
+    for item in items:
+        new_item = {}
+        for k, v in item.items():
+            if k in float_keys and isinstance(v, int):
+                new_item[k] = float(v)
+            else:
+                new_item[k] = v
+        sanitized.append(new_item)
+    return sanitized
 
-def fetch_raw_flipp_zip_payload():
-    """
-    Connects to the Parse.bot API using live parameters.
-    Falls back gracefully to mock data if a 502/Gateway error occurs.
-    """
+def ingest_flipp_pipeline():
     api_url = "https://api.parse.bot/scraper/054ce88f-2a08-4272-9ab9-70799328cedf/search_deals"
+    
+    # Securely retrieve the API key from environment variables
+    api_key = os.getenv("PARSE_BOT_API_KEY")
+    if not api_key:
+        raise ValueError(">>> Error: PARSE_BOT_API_KEY environment variable is not set.")
+
     headers = {"X-API-Key": api_key}
+    
+    # Hardcoded postal code (will be replaced by frontend input later)
+    target_postal_code = "32816"
+    
     params = {
         "query": "Buy one",
-        "postal_code": "32816"
-    } #change postal_code into user input. 
+        "postal_code": target_postal_code
+    }
     
-    try:
-        print(">>> Contacting Parse.bot API...")
-        response = requests.get(api_url, headers=headers, params=params, timeout=15)
-        
-        if response.status_code == 200:
-            payload = response.json()
-            # Drill into Parse.bot's exact response path: data -> items
-            items = payload.get("data", {}).get("items", [])
-            print(f"Successfully retrieved {len(items)} live items from API.")
-            return items
-        else:
-            print(f"API Warning: Received Status Code {response.status_code}. Activating mock fallback.")
-    except Exception as e:
-        print(f"API Connection Error: {e}. Activating mock fallback.")
-
+    print(f">>> Contacting Parse.bot API for postal code: {target_postal_code} (waiting up to 60s for scraper)...")
     
-    # Field names have been updated here to match the exact keys returned by Parse.bot!
-    return [
-        {"merchant_name": "Walmart Neighborhood Market", "name": "Sparkling Water 12-Pack", "category_l2": "Beverages", "pre_price_text": "Buy 1 Get 1 Free", "current_price": 12.80},
-        {"merchant_name": "Walmart Neighborhood Market", "name": "Thomas English Muffins", "category_l2": "Bakery", "pre_price_text": "BUY ONE GET ONE FREE!", "current_price": 5.50},
-        {"merchant_name": "Walmart Neighborhood Market", "name": "Whole Milk Gal", "category_l2": "Dairy", "pre_price_text": "Save $1.00 on 1", "current_price": 6.00},
-        {"merchant_name": "Target Supercenter", "name": "Dark Chocolate Bar 85%", "category_l2": "Snacks", "pre_price_text": "BOGO deals this week", "current_price": 3.00}
-    ]
+    # Expanded timeout to 60 seconds to accommodate external scraper response times
+    response = requests.get(api_url, headers=headers, params=params, timeout=60)
+    
+    if response.status_code == 200:
+        payload = response.json()
+        items = payload.get("data", {}).get("items", [])
+        print(f">>> Successfully retrieved {len(items)} live items from API.")
+    else:
+        raise Exception(f"API Failed with Status Code {response.status_code}: {response.text}")
 
-def ingest_flipp_bogo_pipeline():
-    raw_items = fetch_raw_flipp_zip_payload()
-    if not raw_items:
-        print("No regional data available.")
+    if not items:
+        print(">>> Warning: No items returned from API.")
         return
 
-    
-    flipp_schema = StructType([
-        StructField("merchant_name", StringType(), True),
-        StructField("name", StringType(), True),
-        StructField("category_l2", StringType(), True),
-        StructField("pre_price_text", StringType(), True),
-        StructField("current_price", DoubleType(), True)
-    ])
-    
-    df_raw = spark.createDataFrame(raw_items, flipp_schema)
-    df_raw.createOrReplaceTempView("vw_raw_flipp_feed")
+    # Sanitize items to resolve integer/float type mismatches before Spark inference
+    clean_items = sanitize_items(items)
 
-    print(">>> Phase 1: Filtering the raw stream for BOGO keywords via Regex...")
-    # FIXED: References newly adjusted schema columns (merchant_name, category_l2, pre_price_text)
-    df_filtered_bogo = spark.sql("""
-        SELECT 
-            s.store_id,
-            f.name AS item_name,
-            f.category_l2 AS category,
-            CAST(f.current_price AS DECIMAL(10,2)) AS price
-        FROM vw_raw_flipp_feed f
-        JOIN default.stores s ON LOWER(f.merchant_name) = LOWER(s.store_name)
-        WHERE f.pre_price_text RLIKE '(?i)(BOGO|BUY\\\\s+1\\\\s+GET\\\\s+1|BUY\\\\s+ONE\\\\s+GET\\\\s+ONE)'
-    """)
-    df_filtered_bogo.createOrReplaceTempView("vw_filtered_bogo_deals")
+    # Create Spark DataFrame directly from the sanitized items list in-memory
+    df = spark.createDataFrame(clean_items)
+    row_count = df.count()
+    print(f">>> Successfully created Spark DataFrame with {row_count} rows.")
 
-    print(">>> Phase 2: Auditing and registering brand new unique items...")
-    df_new_items = spark.sql("""
-        SELECT 
-            (SELECT COALESCE(MAX(item_id), 0) FROM default.items) + ROW_NUMBER() OVER (ORDER BY item_name) AS item_id,
-            item_name,
-            category
-        FROM (
-            SELECT DISTINCT item_name, category 
-            FROM vw_filtered_bogo_deals
-            WHERE LOWER(item_name) NOT IN (SELECT LOWER(item_name) FROM default.items)
-        )
-    """)
-    
-    new_item_count = df_new_items.count()
-    if new_item_count > 0:
-        df_new_items.write.mode("append").insertInto("default.items")
-        print(f"Successfully registered {new_item_count} new product layout types into default.items.")
-    
-    print(">>> Phase 3: Performing atomic MERGE into default.store_product...")
-    spark.sql("""
-        MERGE INTO default.store_product AS target
-        USING (
-            SELECT 
-                b.store_id, 
-                i.item_id, 
-                b.price
-            FROM vw_filtered_bogo_deals b
-            JOIN default.items i ON LOWER(b.item_name) = LOWER(i.item_name)
-        ) AS source
-        ON target.store_id = source.store_id AND target.item_id = source.item_id
-        WHEN MATCHED THEN
-            UPDATE SET 
-                target.bogo_promotion = true,
-                target.price = source.price
-        WHEN NOT MATCHED THEN
-            INSERT (store_id, item_id, bogo_promotion, price) 
-            VALUES (source.store_id, source.item_id, true, source.price)
-    """)
-    
-    print(">>> Pipeline sync completed! Current state of default.store_product:")
-    spark.table("default.store_product").show()
+    if row_count > 0:
+        # Register as temporary view
+        df.createOrReplaceTempView("raw_flipp_data")
+        
+        # 1. Upsert parent table: Stores
+        spark.sql("""
+            MERGE INTO default.stores AS target
+            USING (
+                SELECT DISTINCT merchant_id AS store_id, merchant_name AS store_name 
+                FROM raw_flipp_data 
+                WHERE merchant_id IS NOT NULL AND merchant_name IS NOT NULL
+            ) AS source
+            ON target.store_id = source.store_id
+            WHEN NOT MATCHED THEN INSERT (store_id, store_name) 
+            VALUES (source.store_id, source.store_name)
+        """)
+        print(">>> Stores table updated.")
+
+        # 2. Upsert parent table: Items
+        spark.sql("""
+            MERGE INTO default.items AS target
+            USING (
+                SELECT DISTINCT id AS item_id, name AS item_name, category_l1 AS category 
+                FROM raw_flipp_data 
+                WHERE id IS NOT NULL AND name IS NOT NULL
+            ) AS source
+            ON target.item_id = source.item_id
+            WHEN NOT MATCHED THEN INSERT (item_id, item_name, category) 
+            VALUES (source.item_id, source.item_name, source.category)
+        """)
+        print(">>> Items table updated.")
+
+        # 3. Upsert associative table: Store-Product with strict sequential BOGO regex check
+        spark.sql("""
+            MERGE INTO default.store_product AS target
+            USING (
+                SELECT 
+                    merchant_id AS store_id, 
+                    id AS item_id, 
+                    CASE 
+                        WHEN lower(coalesce(sale_story, '')) RLIKE 'buy.*get.*free'
+                             OR lower(coalesce(pre_price_text, '')) RLIKE 'buy.*get.*free'
+                        THEN true 
+                        ELSE false 
+                    END AS bogo_promotion
+                FROM raw_flipp_data
+                WHERE merchant_id IS NOT NULL AND id IS NOT NULL
+            ) AS source
+            ON target.store_id = source.store_id AND target.item_id = source.item_id
+            WHEN MATCHED THEN UPDATE SET 
+                target.bogo_promotion = source.bogo_promotion
+            WHEN NOT MATCHED THEN INSERT (store_id, item_id, bogo_promotion) 
+                VALUES (source.store_id, source.item_id, source.bogo_promotion)
+        """)
+        print(">>> Store-Product associative table updated successfully!")
+        
+        # Show final result state
+        spark.table("default.store_product").show()
+    else:
+        print(">>> Warning: DataFrame was empty. Skipping database merges.")
 
 if __name__ == "__main__":
-    ingest_flipp_bogo_pipeline()
+    ingest_flipp_pipeline()
