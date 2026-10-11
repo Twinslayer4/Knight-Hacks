@@ -5,7 +5,8 @@ from flask import Flask, jsonify, render_template, request
 from getDeals import ingest_flipp_pipeline
 
 app = Flask(__name__, template_folder='../templates')
-
+print("ALL ENV VARS:", list(os.environ.keys()))
+print("PARSE_BOT_API_KEY value:", os.environ.get("PARSE_BOT_API_KEY"))
 
 def find_deals(zip_code):
     with sql.connect(
