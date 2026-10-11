@@ -1,6 +1,16 @@
 import os
 import requests
 from databricks import sql
+from databricks.sdk.core import Config
+
+
+def get_db_connection():
+    cfg = Config()
+    return sql.connect(
+        server_hostname=os.getenv("DATABRICKS_SERVER_HOSTNAME") or cfg.host,
+        http_path=os.getenv("DATABRICKS_HTTP_PATH"),
+        credentials_provider=lambda: cfg.authenticate
+    )
 
 def sanitize_items(items):
     """Normalize numeric types across items to prevent type mismatch issues."""
@@ -86,12 +96,7 @@ def ingest_flipp_pipeline(user_postal_code="32816"):
 
         rows_to_insert.append((merchant_id, merchant_name, item_id, item_name, category, price, bogo_promotion))
 
-    # Connect to Databricks using the SQL connector
-    with sql.connect(
-        server_hostname="dbc-27a699b2-bbb7.cloud.databricks.com",
-        http_path="/sql/1.0/warehouses/5bc8676af1d56063",
-        access_token=os.environ["DATABRICKS_TOKEN"]
-    ) as connection:
+    with get_db_connection() as connection:
         with connection.cursor() as cursor:
             print(f">>> Executing bulk staging and MERGE for {len(rows_to_insert)} records...")
             
