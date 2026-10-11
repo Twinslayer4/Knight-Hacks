@@ -1,36 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
-<!--Critical for the browser unecessary for the user-->
-
 <head>
     <meta charset="UTF-8">
-    <!--Viewport scales the websites to phones-->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Get your BOGO</title>
-    <!-- Simple styling to keep the form clean for simple page layouts -->
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 40px;
             max-width: 600px;
         }
-
         .form-group {
             margin-bottom: 15px;
         }
-
         label {
             display: block;
             margin-bottom: 5px;
             font-weight: bold;
         }
-
         input[type="text"] {
             width: 100%;
             padding: 8px;
             box-sizing: border-box;
         }
-
         button {
             padding: 10px 15px;
             background-color: darkgreen;
@@ -38,11 +30,9 @@
             border: none;
             cursor: pointer;
         }
-
         button:hover {
             background-color: forestgreen;
         }
-
         #results {
             margin-top: 20px;
             padding: 15px;
@@ -51,36 +41,99 @@
         }
     </style>
 </head>
-<!-- the body contains the actual elements the user sees and interact with ie. name input, button, etc-->
-
 <body>
     <h1>Find Your Local BOGO Deals</h1>
     <p>Enter your details below to find Buy-One-Get-One deals near you.</p>
 
-    <!-- The ID on this form is crucial for JavaScript to listen to -->
-    <!--form groups input data inside a <form> tag. It allows user to sumbit "Enter" rather than using a sumbit 
-        button-->
-    <!--the id essentially acts as a pointers for the JavaScript file-->
-    <!-- label and inputs links the text label to the input box, ex: id="bogoForm", the required attribute makes it
-     so the input box cannot be left blank-->
-
     <form id="bogoForm">
-    <div class="form-group">
-        <label for="zipInput">Zip Code:</label>
-        <input type="text" id="zipInput" required>
-    </div>
+        <div class="form-group">
+            <label for="zipInput">Zip Code:</label>
+            <input type="text" id="zipInput" required>
+        </div>
+        <button type="submit">Search Deals</button>
+    </form>
 
-    <button type="submit">Search Deals</button>
-</form>
-    <!-- This empty div is where renderResults() will display the data, we will leave the container empty
-      because it will receive the fetch API in the JS files gets the JSON file it will get new HTML elements
-      and will be put into this div container-->
     <div id="results"></div>
 
-    <!-- Link to our external JavaScript file, if this was placed at the beginning of the file it would execute
-      before the HTML elements causing an error for the getDocuments function on the JS file -->
+    <script>
+        console.log("Inline script is loaded and running!");
 
-    <script src="/static/script.js"></script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const form = document.getElementById('bogoForm');
+            
+            if (!form) {
+                console.error("Could not find bogoForm in the DOM!");
+                return;
+            }
+
+            form.addEventListener('submit', async function(event) {
+                event.preventDefault();
+                await searchBOGOs();
+            });
+        });
+
+        async function searchBOGOs() {
+            const zipInput = document.getElementById('zipInput');
+            const zipCode = zipInput ? zipInput.value.trim() : '';
+
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.style.display = 'block';
+            resultsDiv.innerHTML = '<p>Searching for deals...</p>';
+
+            try {
+                const response = await fetch('/api/search', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ zip_code: zipCode })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                renderResults(data);
+
+            } catch (error) {
+                console.error("Error fetching deals: ", error);
+                resultsDiv.innerHTML = '<p style="color: red;">Failed to load deals. Please try again.</p>';
+            }
+        }
+
+        function renderResults(data) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '';
+
+            if (!data.deals || data.deals.length === 0) {
+                resultsDiv.innerHTML = '<p>No BOGO deals found in your area</p>';
+                return;
+            }
+
+            data.deals.forEach(deal => {
+                const dealDiv = document.createElement('div');
+                dealDiv.style.borderBottom = '1px solid #eee';
+                dealDiv.style.marginBottom = '15px';
+                dealDiv.style.paddingBottom = '10px';
+
+                const storeHeader = document.createElement('h3');
+                storeHeader.textContent = deal.store;
+                storeHeader.style.margin = '0 0 5px 0';
+
+                const storeAddress = document.createElement('p');
+                storeAddress.textContent = deal.address;
+                storeAddress.style.margin = '0 0 5px 0';
+                storeAddress.style.color = '#731a7d';
+
+                const itemInfo = document.createElement('p');
+                itemInfo.textContent = `${deal.item} - $${deal.price} (${deal.offer})`;
+                itemInfo.style.margin = '0';
+
+                dealDiv.appendChild(storeHeader);
+                dealDiv.appendChild(storeAddress);
+                dealDiv.appendChild(itemInfo);
+                resultsDiv.appendChild(dealDiv);
+            });
+        }
+    </script>
 </body>
-
 </html>
