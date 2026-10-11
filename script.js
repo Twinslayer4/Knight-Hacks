@@ -1,21 +1,30 @@
-// Listen for the form submission
-document.getElementById('bogoForm').addEventListener('submit', function(event) {
-    // Prevents the page from resetting
-    event.preventDefault();
-    searchBOGOs();
+document.addEventListener('DOMContentLoaded', () => {
+    const form = document.getElementById('bogoForm');
+    
+    if (!form) {
+        console.error("Could not find bogoForm in the DOM!");
+        return;
+    }
+
+    // Listen for the form submission
+    form.addEventListener('submit', function(event) {
+        // Prevents the page from resetting/refreshing
+        event.preventDefault();
+        searchBOGOs();
+    });
 });
 
 // Async function to handle the request
 async function searchBOGOs() {
-    // 1. Capture the zip code from the input field
-    const zipCode = document.getElementById('zipInput').value;
+    const zipInput = document.getElementById('zipInput');
+    const zipCode = zipInput ? zipInput.value : '';
 
     const resultsDiv = document.getElementById('results');
     resultsDiv.style.display = 'block';
     resultsDiv.innerHTML = '<p>Searching for deals...</p>';
 
     try {
-        // 2. Send the request to Flask backend
+        // Send the request to Flask backend API route
         const response = await fetch('/api/search', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -30,7 +39,7 @@ async function searchBOGOs() {
         
         const data = await response.json();
 
-        // 3. Pass the data to our display function 
+        // Pass the data to our display function 
         renderResults(data);
 
     } catch (error) {
