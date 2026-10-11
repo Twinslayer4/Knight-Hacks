@@ -64,17 +64,14 @@
     <!-- label and inputs links the text label to the input box, ex: id="bogoForm", the required attribute makes it
      so the input box cannot be left blank-->
 
-    <form id="bogoForm" onsubmit="event.preventDefault(); searchBOGOs();">
+    <form id="bogoForm">
+    <div class="form-group">
+        <label for="zipInput">Zip Code:</label>
+        <input type="text" id="zipInput" required>
+    </div>
 
-
-        <div class="form-group">
-            <label for="zipInput">Zip Code:</label>
-            <input type="text" id="zipInput" required>
-        </div>
-
-        <button type="submit">Search Deals</button>
-    </form>
-
+    <button type="submit">Search Deals</button>
+</form>
     <!-- This empty div is where renderResults() will display the data, we will leave the container empty
       because it will receive the fetch API in the JS files gets the JSON file it will get new HTML elements
       and will be put into this div container-->

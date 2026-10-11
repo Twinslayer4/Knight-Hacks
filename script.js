@@ -7,17 +7,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Listen for the form submission
-    form.addEventListener('submit', function(event) {
+    form.addEventListener('submit', async function(event) {
         // Prevents the page from resetting/refreshing
         event.preventDefault();
-        searchBOGOs();
+        await searchBOGOs();
     });
 });
 
 // Async function to handle the request
 async function searchBOGOs() {
     const zipInput = document.getElementById('zipInput');
-    const zipCode = zipInput ? zipInput.value : '';
+    const zipCode = zipInput ? zipInput.value.trim() : '';
 
     const resultsDiv = document.getElementById('results');
     resultsDiv.style.display = 'block';
