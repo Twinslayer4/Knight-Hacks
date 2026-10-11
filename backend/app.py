@@ -47,8 +47,24 @@ def home():
 def get_deals():
     zip_code = request.args.get("zip", "").strip()
 
-    if len(zip_code) != 5 or not zip_code.isascii() or not zip_code.isdigit():
-        return jsonify({"error": "Enter a five-digit ZIP code."}), 400
+    if (
+        len(zip_code) != 5
+        or not zip_code.isascii()
+        or not zip_code.isdigit()
+    ):
+        return jsonify({
+            "error": "Enter a five-digit ZIP code."
+        }), 400
 
-    deals = find_deals(zip_code)
-    return jsonify({"zip": zip_code, "deals": deals})
+    try:
+        deals = find_deals(zip_code)
+    except Exception:
+        app.logger.exception("Failed to load deals from Databricks")
+        return jsonify({
+            "error": "Could not load deals. Please try again."
+        }), 503
+
+    return jsonify({
+        "zip": zip_code,
+        "deals": deals
+    })
