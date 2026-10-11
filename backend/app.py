@@ -45,9 +45,10 @@ def home():
     return render_template("index.html")
 
 
-@app.route("/deals")
-def get_deals():
-    zip_code = request.args.get("zip", "").strip()
+@app.route("/api/search", methods=["POST"])
+def search_deals():
+    data = request.get_json() or {}
+    zip_code = str(data.get("zip_code", "")).strip()
 
     if (
         len(zip_code) != 5
