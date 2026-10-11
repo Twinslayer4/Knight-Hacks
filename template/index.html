@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--Critical for the browser unecessary for the user-->
+<head>
+    <meta charset="UTF-8">
+    <!--Viewport scales the websites to phones-->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"
+    <title>Get your BOGO</title>
+    <!-- Simple styling to keep the form clean for simple page layouts -->
+    <style>
+        body {font-family: Arial, sans-serif; margin: 40px; max-width: 600px; }
+        .form-group {margin-bottom: 15px; }
+        label{display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"] {width: 100%; padding: 8px; box-sizing: border-box; }
+        button {padding: 10px 15px; background-color:darkgreen; color:white; border:none; cursor: pointer;}
+        button:hover {background-color:forestgreen;}
+        #results {margin-top: 20px; padding: 15px; border: 1px solid darkgray; display: none;}
+    </style>
+</head>
+<!-- the body contains the actual elements the user sees and interact with ie. name input, button, etc-->
+<body>
+    <h1>Find Your Local BOGO Deals</h1>
+    <p>Enter your details below to find Buy-One-Get-One deals near you.</p>
+
+    <!-- The ID on this form is crucial for JavaScript to listen to -->
+    <!--form groups input data inside a <form> tag. It allows user to sumbit "Enter" rather than using a sumbit 
+        button-->
+    <!--the id essentially acts as a pointers for the JavaScript file-->
+    <!-- label and inputs links the text label to the input box, ex: id="bogoForm", the required attribute makes it
+     so the input box cannot be left blank-->
+
+     <form id="bogoForm">
+        <div class="form-group">
+            <label for="nameInput">Full Name:</label>
+            <input type="text" id="nameInput" required>
+        </div>
+
+        <div class="form-group">
+            <label for="addressInput">Street Address:</label>
+            <input type="text" id="addressInput" required>
+        </div>
+
+        <div class="form-group">
+            <label for="zipInput">Zip Code:</label>
+            <input type="text" id="zipInput" required>
+        </div>
+
+        <button type="sumbit">Search Deals</button>
+     </form>
+
+     <!-- This empty div is where renderResults() will display the data, we will leave the container empty
+      because it will receive the fetch API in the JS files gets the JSON file it will get new HTML elements
+      and will be put into this div container-->
+    <div id="results"></div>
+
+     <!-- Link to our external JavaScript file, if this was placed at the beginning of the file it would execute
+      before the HTML elements causing an error for the getDocuments function on the JS file -->
+      
+    <script src="/static/script.js"></script>
+</body>
+</html>
