@@ -1,3 +1,5 @@
+console.log("script.js is loaded and running!");
+
 document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('bogoForm');
     
