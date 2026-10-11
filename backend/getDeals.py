@@ -48,7 +48,7 @@ def ingest_flipp_pipeline(user_postal_code="32816"):
     }
     
     print(f">>> Contacting Parse.bot API for postal code: {params['postal_code']}...")
-    response = requests.get(api_url, headers=headers, params=params, timeout=60)
+    response = requests.get(api_url, headers=headers, params=params, timeout=30)
     
     if response.status_code == 200:
         payload = response.json()

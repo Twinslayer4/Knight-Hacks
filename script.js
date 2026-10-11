@@ -69,13 +69,9 @@ function renderResults(data) {
         storeHeader.textContent = deal.store;
         storeHeader.style.margin = '0 0 5px 0';
 
-        const storeAddress = document.createElement('p');
-        storeAddress.textContent = deal.address;
-        storeAddress.style.margin = '0 0 5px 0';
-        storeAddress.style.color = '#731a7d';
 
         const itemInfo = document.createElement('p');
-        itemInfo.textContent = `${deal.item} - $${deal.price} (${deal.offer})`;
+        itemInfo.textContent = `${deal.item} - (${deal.offer})`;
         itemInfo.style.margin = '0';
 
         dealDiv.appendChild(storeHeader);
