@@ -1,7 +1,5 @@
 command: ["python", "backend/app.py"]
 env:
   - name: PARSE_BOT_API_KEY
-    valueFrom:
-      secret:
-        scope: "bogo-app-scope"
-        key: "parse-bot-key"
+    secret_scope: "bogo-app-scope"
+    secret_key: "parse-bot-key"
