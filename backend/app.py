@@ -1,6 +1,7 @@
 import os
-from flask import Flask, jsonify, request
+
 from databricks import sql
+from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
 
@@ -40,7 +41,7 @@ def find_deals(zip_code):
 
 @app.route("/")
 def home():
-    return "BOGO backend is working!"
+    return render_template("index.html")
 
 
 @app.route("/deals")
@@ -52,9 +53,7 @@ def get_deals():
         or not zip_code.isascii()
         or not zip_code.isdigit()
     ):
-        return jsonify({
-            "error": "Enter a five-digit ZIP code."
-        }), 400
+        return jsonify({"error": "Enter a five-digit ZIP code."}), 400
 
     try:
         deals = find_deals(zip_code)
@@ -64,7 +63,4 @@ def get_deals():
             "error": "Could not load deals. Please try again."
         }), 503
 
-    return jsonify({
-        "zip": zip_code,
-        "deals": deals
-    })
+    return jsonify({"zip": zip_code, "deals": deals})
